@@ -176,12 +176,12 @@ enum {
 #define INET_ULP_INFO_MAX (__INET_ULP_INFO_MAX - 1)
 
 /* INET_DIAG_MEM */
-
+// https://manpages.courier-mta.org/htmlman7/sock_diag.7.html
 struct inet_diag_meminfo {
-	__u32	idiag_rmem;
-	__u32	idiag_wmem;
-	__u32	idiag_fmem;
-	__u32	idiag_tmem;
+	__u32	idiag_rmem; // The amount of data in the receive queue
+	__u32	idiag_wmem; // The amount of data that is queued by TCP but not yet sent
+	__u32	idiag_fmem; // The amount of memory scheduled for future use (TCP only).
+	__u32	idiag_tmem; // The amount of data in send queue.
 };
 
 /* INET_DIAG_SOCKOPT */

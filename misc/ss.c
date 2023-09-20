@@ -5,6 +5,8 @@
  * Authors:	Alexey Kuznetsov, <kuznet@ms2.inr.ac.ru>
  */
 
+// https://man7.org/linux/man-pages/man8/ss.8.html
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -2572,13 +2574,13 @@ static void tcp_stats_print(struct tcpstat *s)
 	if (s->has_wscale_opt)
 		out(" wscale:%d,%d", s->snd_wscale, s->rcv_wscale);
 	if (s->rto)
-		out(" rto:%g", s->rto);
+		out(" rto:%g", s->rto); // 动态计算出来的 TCP 重传用的超时参数, 单位毫秒
 	if (s->backoff)
-		out(" backoff:%u", s->backoff);
+		out(" backoff:%u", s->backoff); // 指数退避重传超时, 实际超时时间: rto << backoff
 	if (s->rtt)
-		out(" rtt:%g/%g", s->rtt, s->rttvar);
+		out(" rtt:%g/%g", s->rtt, s->rttvar); // 测量与估算出来的 rtt, rttvar 是平均差
 	if (s->ato)
-		out(" ato:%g", s->ato);
+		out(" ato:%g", s->ato); // delay ack 超时, 单位毫秒。用于 delay ack 模式
 
 	if (s->qack)
 		out(" qack:%d", s->qack);
@@ -2586,14 +2588,15 @@ static void tcp_stats_print(struct tcpstat *s)
 		out(" bidir");
 
 	if (s->mss)
-		out(" mss:%d", s->mss);
+		out(" mss:%d", s->mss); // maximum segment size
 	if (s->pmtu)
-		out(" pmtu:%u", s->pmtu);
+		out(" pmtu:%u", s->pmtu); // path MUT
 	if (s->rcv_mss)
 		out(" rcvmss:%d", s->rcv_mss);
 	if (s->advmss)
 		out(" advmss:%d", s->advmss);
-	if (s->cwnd)
+    // 拥塞控制算法, cwnd/ssthread 变化: https://cloud.tencent.com/developer/article/1920081
+	if (s->cwnd) // 拥塞控制窗口
 		out(" cwnd:%u", s->cwnd);
 	if (s->ssthresh)
 		out(" ssthresh:%d", s->ssthresh);
@@ -2647,11 +2650,11 @@ static void tcp_stats_print(struct tcpstat *s)
 	if (s->send_bps)
 		out(" send %sbps", sprint_bw(b1, s->send_bps));
 	if (s->lastsnd)
-		out(" lastsnd:%u", s->lastsnd);
+		out(" lastsnd:%u", s->lastsnd); // how long time since the last packet sent, in millisecond
 	if (s->lastrcv)
-		out(" lastrcv:%u", s->lastrcv);
+		out(" lastrcv:%u", s->lastrcv); // how long time since the last packet received, in millisecond
 	if (s->lastack)
-		out(" lastack:%u", s->lastack);
+		out(" lastack:%u", s->lastack); // how long time since the last ack received, in millisecond
 
 	if (s->pacing_rate) {
 		out(" pacing_rate %sbps", sprint_bw(b1, s->pacing_rate));
@@ -2666,7 +2669,7 @@ static void tcp_stats_print(struct tcpstat *s)
 	if (s->delivered_ce)
 		out(" delivered_ce:%u", s->delivered_ce);
 	if (s->app_limited)
-		out(" app_limited");
+		out(" app_limited"); // 应用程序未使用完全的 TCP 发送带宽?
 
 	if (s->busy_time) {
 		out(" busy:%llums", s->busy_time / 1000);
@@ -4064,11 +4067,12 @@ static void unix_stats_print(struct sockstat *s, struct filter *f)
 static int unix_show_sock(struct nlmsghdr *nlh, void *arg)
 {
 	struct filter *f = (struct filter *)arg;
-	struct unix_diag_msg *r = NLMSG_DATA(nlh);
+	struct unix_diag_msg *r = NLMSG_DATA(nlh); // nlh + 16(hdr)
 	struct rtattr *tb[UNIX_DIAG_MAX+1];
 	char name[128];
 	struct sockstat stat = { .name = "*", .peer_name = "*" };
 
+    // 解析数据到 tb
 	parse_rtattr(tb, UNIX_DIAG_MAX, (struct rtattr *)(r+1),
 		     nlh->nlmsg_len - NLMSG_LENGTH(sizeof(*r)));
 
@@ -4080,7 +4084,7 @@ static int unix_show_sock(struct nlmsghdr *nlh, void *arg)
 	if (unix_type_skip(&stat, f))
 		return 0;
 
-	if (tb[UNIX_DIAG_RQLEN]) {
+	if (tb[UNIX_DIAG_RQLEN]) { // 有 receive queue len 数据
 		struct unix_diag_rqlen *rql = RTA_DATA(tb[UNIX_DIAG_RQLEN]);
 
 		stat.rq = rql->udiag_rqueue;
@@ -4149,10 +4153,10 @@ static int handle_netlink_request(struct filter *f, struct nlmsghdr *req,
 
 	rth.dump = MAGIC_SEQ;
 
-	if (rtnl_send(&rth, req, size) < 0)
+	if (rtnl_send(&rth, req, size) < 0) // 发送 diag_net 的 netlink 消息头
 		goto Exit;
 
-	if (rtnl_dump_filter(&rth, show_one_sock, f))
+	if (rtnl_dump_filter(&rth, show_one_sock, f)) // 获取 netlink 的返回消息, 回调 show_one_sock 函数
 		goto Exit;
 
 	ret = 0;
@@ -4163,14 +4167,15 @@ Exit:
 
 static int unix_show_netlink(struct filter *f)
 {
+    // 构造 netlink 请求
 	DIAG_REQUEST(req, struct unix_diag_req r);
 
 	req.r.sdiag_family = AF_UNIX;
 	req.r.udiag_states = f->states;
 	req.r.udiag_show = UDIAG_SHOW_NAME | UDIAG_SHOW_PEER | UDIAG_SHOW_RQLEN;
-	if (show_mem)
+	if (show_mem) // 需要显示内存信息 -m
 		req.r.udiag_show |= UDIAG_SHOW_MEMINFO;
-	if (show_details)
+	if (show_details) // -e
 		req.r.udiag_show |= UDIAG_SHOW_VFS | UDIAG_SHOW_ICONS;
 
 	return handle_netlink_request(f, &req.nlh, sizeof(req), unix_show_sock);

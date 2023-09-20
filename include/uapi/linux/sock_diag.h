@@ -12,15 +12,20 @@ struct sock_diag_req {
 	__u8	sdiag_protocol;
 };
 
+// man ss
+// 字段解释: https://manpages.courier-mta.org/htmlman7/sock_diag.7.html
+// SK_MEMINFO_WMEM_ALLOC 与 SK_MEMINFO_WMEM_QUEUED 区别的解析: https://unix.stackexchange.com/questions/551444/what-is-the-difference-between-sock-sk-wmem-alloc-and-sock-sk-wmem-queued
+// 数据流向: app => socket buffer => qdisc queue => NIC TX ring buffer
+// 拥塞控制(cwnd 限制)导致数据无法发送会缓存在 socket buffer
 enum {
-	SK_MEMINFO_RMEM_ALLOC,
-	SK_MEMINFO_RCVBUF,
-	SK_MEMINFO_WMEM_ALLOC,
-	SK_MEMINFO_SNDBUF,
-	SK_MEMINFO_FWD_ALLOC,
-	SK_MEMINFO_WMEM_QUEUED,
-	SK_MEMINFO_OPTMEM,
-	SK_MEMINFO_BACKLOG,
+	SK_MEMINFO_RMEM_ALLOC,  // The amount of data in receive queue.
+	SK_MEMINFO_RCVBUF,      // The receive socket buffer as set by SO_RCVBUF.
+	SK_MEMINFO_WMEM_ALLOC,  // The amount of data in send queue. # qdisc & device queue 占用的内存
+	SK_MEMINFO_SNDBUF,      // The send socket buffer as set by SO_SNDBUF.
+	SK_MEMINFO_FWD_ALLOC,   // The amount of memory scheduled for future use (TCP only).
+	SK_MEMINFO_WMEM_QUEUED, // The amount of data queued by TCP, but not yet sent. // socket buffer 占用的内存 sock.sk_write_queue
+	SK_MEMINFO_OPTMEM,      // The amount of memory allocated for the socket's service needs (e.g., socket filter).
+	SK_MEMINFO_BACKLOG,     // The amount of packets in the backlog (not yet processed).
 	SK_MEMINFO_DROPS,
 
 	SK_MEMINFO_VARS,
